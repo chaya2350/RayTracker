@@ -16,8 +16,37 @@
 #include <thread>
 #include <atomic>
 
-// ── Ray color (recursive path tracing) ───────────────────────────────────────
-Color rayColor(const Ray& ray, const Hittable& world, int depth) {
+#include <numbers>
+
+// ── Area light descriptor ─────────────────────────────────────────────────────
+// Mirrors the Quad light in the scene so rayColor can sample it directly.
+struct AreaLight {
+    Point3 Q;       // corner of the light rectangle
+    Vec3   u, v;    // two edge vectors
+    Color  emit;    // emitted radiance
+    Vec3   normal;  // unit normal (points downward into the room)
+    double area;    // precomputed |u × v|
+
+    AreaLight(const Point3& Q, const Vec3& u, const Vec3& v, const Color& emit)
+        : Q(Q), u(u), v(v), emit(emit)
+    {
+        Vec3 cross_uv = cross(u, v);
+        area   = cross_uv.length();
+        normal = normalize(cross_uv);
+    }
+
+    // Returns a uniformly random point on the light surface
+    Point3 sample() const {
+        return Q + randomDouble() * u + randomDouble() * v;
+    }
+};
+
+// ── Ray color with Next Event Estimation (direct light sampling) ──────────────
+// includeEmit: true for camera rays and specular bounces,
+//              false after diffuse bounces (already counted via direct sampling)
+Color rayColor(const Ray& ray, const Hittable& world,
+               const AreaLight& light, int depth, bool includeEmit = true)
+{
     if (depth <= 0)
         return {0, 0, 0};
 
@@ -25,17 +54,40 @@ Color rayColor(const Ray& ray, const Hittable& world, int depth) {
     if (!world.hit(ray, 1e-4, infinity, rec))
         return {0, 0, 0};  // Black background — the room has no windows
 
-    // Ask the material: do you emit light?
-    Color emitted = rec.material->emitted();
+    // Emission (only shown to camera/specular rays to avoid double-counting)
+    Color emitted = includeEmit ? rec.material->emitted() : Color(0, 0, 0);
 
-    // Ask the material: does the ray scatter?
     Ray   scattered;
     Color attenuation;
     if (!rec.material->scatter(ray, rec, attenuation, scattered))
-        return emitted;  // Light source — just return its glow, don't recurse
+        return emitted;  // Hit the lamp itself — just glow
 
-    // Normal surface: emitted (usually 0) + reflected recursive color
-    return emitted + attenuation * rayColor(scattered, world, depth - 1);
+    // ── Direct lighting: shadow ray straight to the area light ───────────────
+    Color direct{0, 0, 0};
+    {
+        Point3 lightPt  = light.sample();
+        Vec3   toLight  = lightPt - rec.point;
+        double dist     = toLight.length();
+        Vec3   toLightN = toLight / dist;
+
+        double cosI = dot(rec.normal,    toLightN);   // angle at surface
+        double cosO = dot(light.normal, -toLightN);   // angle at light face
+
+        if (cosI > 0 && cosO > 0) {
+            // Shadow ray — if nothing blocks the path, we're lit
+            HitRecord shadow;
+            if (!world.hit(Ray(rec.point, toLightN), 1e-4, dist - 1e-3, shadow)) {
+                // Solid-angle pdf: p = d² / (cosO * A)
+                double pdf = (dist * dist) / (cosO * light.area);
+                direct = attenuation * light.emit * cosI / (pdf * std::numbers::pi);
+            }
+        }
+    }
+
+    // ── Indirect lighting: random bounce (don't re-count light emission) ──────
+    Color indirect = attenuation * rayColor(scattered, world, light, depth - 1, false);
+
+    return emitted + direct + indirect;
 }
 
 // ── Render one horizontal band of rows [rowStart, rowEnd) ────────────────────
@@ -44,6 +96,7 @@ void renderBand(int rowStart, int rowEnd,
                 int imageWidth, int imageHeight,
                 int samplesPerPx, int maxDepth,
                 const Camera& camera, const Hittable& world,
+                const AreaLight& light,
                 std::vector<Color>& pixels,
                 std::atomic<int>& rowsDone)
 {
@@ -59,7 +112,7 @@ void renderBand(int rowStart, int rowEnd,
             for (int s = 0; s < samplesPerPx; ++s) {
                 double u = (i + randD()) / (imageWidth  - 1);
                 double v = (j + randD()) / (imageHeight - 1);
-                pixelColor += rayColor(camera.getRay(u, v), world, maxDepth);
+                pixelColor += rayColor(camera.getRay(u, v), world, light, maxDepth);
             }
 
             int row = imageHeight - 1 - j;
@@ -86,7 +139,7 @@ int main() {
     auto red   = std::make_shared<Lambertian>(Color(0.65, 0.05, 0.05));
     auto green = std::make_shared<Lambertian>(Color(0.12, 0.45, 0.15));
     auto white = std::make_shared<Lambertian>(Color(0.73, 0.73, 0.73));
-    auto light = std::make_shared<DiffuseLight>(Color(15, 15, 15));  // bright white light
+    auto lightMat = std::make_shared<DiffuseLight>(Color(15, 15, 15));  // bright white light
 
     // Walls (555 x 555 x 555 room)
     world.add(std::make_shared<Quad>(Point3(555,0,0),   Vec3(0,555,0),  Vec3(0,0,555),  green)); // right
@@ -96,7 +149,7 @@ int main() {
     world.add(std::make_shared<Quad>(Point3(0,0,555),   Vec3(555,0,0),  Vec3(0,555,0),  white)); // back wall
 
     // Area light — a glowing rectangle cut into the ceiling
-    world.add(std::make_shared<Quad>(Point3(213,554,227), Vec3(130,0,0), Vec3(0,0,105), light));
+    world.add(std::make_shared<Quad>(Point3(213,554,227), Vec3(130,0,0), Vec3(0,0,105), lightMat));
 
     // Two boxes (made of 6 quads each)
     // Tall box (rotated slightly — approximated with axis-aligned for now)
@@ -134,6 +187,14 @@ int main() {
     // Wrap world in BVH — turns O(n) ray tests into O(log n)
     BVHNode bvhWorld(world);
 
+    // Area light — must match the Quad we added to the scene exactly
+    AreaLight light(
+        Point3(213, 554, 227),
+        Vec3(130, 0, 0),
+        Vec3(0, 0, 105),
+        Color(15, 15, 15)
+    );
+
     // Thread setup
     const int numThreads = std::thread::hardware_concurrency();
     const int rowsPerThread = imageHeight / numThreads;
@@ -153,6 +214,7 @@ int main() {
             rowStart, rowEnd,
             imageWidth, imageHeight, samplesPerPx, maxDepth,
             std::cref(camera), std::cref(bvhWorld),
+            std::cref(light),
             std::ref(pixels), std::ref(rowsDone));
     }
 
