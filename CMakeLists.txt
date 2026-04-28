@@ -11,6 +11,11 @@ endif()
 
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
+# MSVC-specific: use /O2 instead of -O3
+if(MSVC)
+    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /GL")
+endif()
+
 add_executable(raytracer
     src/main.cpp
 )
