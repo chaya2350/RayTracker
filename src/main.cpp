@@ -5,6 +5,7 @@
 #include "hittable_list.h"
 #include "sphere.h"
 #include "material.h"
+#include "bvh.h"
 #include "bmp_writer.h"
 
 #include <iostream>
@@ -136,6 +137,9 @@ int main() {
         focusDist
     );
 
+    // Wrap world in BVH — turns O(n) ray tests into O(log n)
+    BVHNode bvhWorld(world);
+
     // Thread setup
     const int numThreads = std::thread::hardware_concurrency();
     const int rowsPerThread = imageHeight / numThreads;
@@ -154,7 +158,7 @@ int main() {
         threads.emplace_back(renderBand,
             rowStart, rowEnd,
             imageWidth, imageHeight, samplesPerPx, maxDepth,
-            std::cref(camera), std::cref(world),
+            std::cref(camera), std::cref(bvhWorld),
             std::ref(pixels), std::ref(rowsDone));
     }
 

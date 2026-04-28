@@ -1,5 +1,6 @@
 #pragma once
 #include "ray.h"
+#include "aabb.h"
 #include <memory>
 
 class Material; // forward declaration — material.h includes us
@@ -24,4 +25,5 @@ class Hittable {
 public:
     virtual ~Hittable() = default;
     virtual bool hit(const Ray& ray, double tMin, double tMax, HitRecord& rec) const = 0;
+    virtual bool boundingBox(AABB& outputBox) const = 0;
 };

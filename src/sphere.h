@@ -39,4 +39,12 @@ public:
         rec.setFaceNormal(ray, (rec.point - center) / radius);
         return true;
     }
+
+    bool boundingBox(AABB& outputBox) const override {
+        outputBox = AABB(
+            center - Vec3(radius, radius, radius),
+            center + Vec3(radius, radius, radius)
+        );
+        return true;
+    }
 };
