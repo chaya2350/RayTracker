@@ -8,6 +8,7 @@
 #include "bvh.h"
 #include "triangle.h"
 #include "obj_loader.h"
+#include "quad.h"
 #include "bmp_writer.h"
 
 #include <iostream>
@@ -21,18 +22,20 @@ Color rayColor(const Ray& ray, const Hittable& world, int depth) {
         return {0, 0, 0};
 
     HitRecord rec;
-    if (world.hit(ray, 1e-4, infinity, rec)) {
-        Ray   scattered;
-        Color attenuation;
-        if (rec.material->scatter(ray, rec, attenuation, scattered))
-            return attenuation * rayColor(scattered, world, depth - 1);
-        return {0, 0, 0};
-    }
+    if (!world.hit(ray, 1e-4, infinity, rec))
+        return {0, 0, 0};  // Black background — the room has no windows
 
-    // Background: sky gradient — blue at top, white at bottom
-    Vec3   unit = normalize(ray.direction);
-    double t    = 0.5 * (unit.y + 1.0);
-    return (1.0 - t) * Color(1.0, 1.0, 1.0) + t * Color(0.5, 0.7, 1.0);
+    // Ask the material: do you emit light?
+    Color emitted = rec.material->emitted();
+
+    // Ask the material: does the ray scatter?
+    Ray   scattered;
+    Color attenuation;
+    if (!rec.material->scatter(ray, rec, attenuation, scattered))
+        return emitted;  // Light source — just return its glow, don't recurse
+
+    // Normal surface: emitted (usually 0) + reflected recursive color
+    return emitted + attenuation * rayColor(scattered, world, depth - 1);
 }
 
 // ── Render one horizontal band of rows [rowStart, rowEnd) ────────────────────
@@ -68,46 +71,61 @@ void renderBand(int rowStart, int rowEnd,
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 int main() {
-    // Image
-    constexpr double aspectRatio  = 16.0 / 9.0;
-    constexpr int    imageWidth   = 800;
-    constexpr int    imageHeight  = static_cast<int>(imageWidth / aspectRatio);
-    constexpr int    samplesPerPx = 100;
+    // Image — Cornell Box is traditionally square (1:1)
+    constexpr double aspectRatio  = 1.0;
+    constexpr int    imageWidth   = 600;
+    constexpr int    imageHeight  = 600;
+    constexpr int    samplesPerPx = 200;
     constexpr int    maxDepth     = 50;
 
-    // ── Teapot scene ─────────────────────────────────────────────────────────
+    // ── Cornell Box scene ─────────────────────────────────────────────────────
+    // Classic setup: red left wall, green right wall, white everywhere else,
+    // one bright area light in the ceiling, two boxes on the floor.
     HittableList world;
 
-    // Ground plane
-    world.add(std::make_shared<Sphere>(
-        Point3(0, -1000, 0), 1000,
-        std::make_shared<Lambertian>(Color(0.45, 0.45, 0.45))));
+    auto red   = std::make_shared<Lambertian>(Color(0.65, 0.05, 0.05));
+    auto green = std::make_shared<Lambertian>(Color(0.12, 0.45, 0.15));
+    auto white = std::make_shared<Lambertian>(Color(0.73, 0.73, 0.73));
+    auto light = std::make_shared<DiffuseLight>(Color(15, 15, 15));  // bright white light
 
-    // The teapot — chrome metal, loaded from OBJ
-    auto teapotMat = std::make_shared<Metal>(Color(0.8, 0.7, 0.6), 0.05);
-    auto teapot    = loadOBJ("teapot.obj", teapotMat);
-    if (teapot) world.add(teapot);
+    // Walls (555 x 555 x 555 room)
+    world.add(std::make_shared<Quad>(Point3(555,0,0),   Vec3(0,555,0),  Vec3(0,0,555),  green)); // right
+    world.add(std::make_shared<Quad>(Point3(0,0,0),     Vec3(0,555,0),  Vec3(0,0,555),  red));   // left
+    world.add(std::make_shared<Quad>(Point3(0,0,0),     Vec3(555,0,0),  Vec3(0,0,555),  white)); // floor
+    world.add(std::make_shared<Quad>(Point3(555,555,555),Vec3(-555,0,0),Vec3(0,0,-555), white)); // ceiling
+    world.add(std::make_shared<Quad>(Point3(0,0,555),   Vec3(555,0,0),  Vec3(0,555,0),  white)); // back wall
 
-    // A glass sphere next to the teapot
-    world.add(std::make_shared<Sphere>(
-        Point3(4, 1.5, 1), 1.5,
-        std::make_shared<Dielectric>(1.5)));
+    // Area light — a glowing rectangle cut into the ceiling
+    world.add(std::make_shared<Quad>(Point3(213,554,227), Vec3(130,0,0), Vec3(0,0,105), light));
 
-    // A matte red sphere on the other side
-    world.add(std::make_shared<Sphere>(
-        Point3(-4, 1, 1), 1.0,
-        std::make_shared<Lambertian>(Color(0.8, 0.3, 0.2))));
+    // Two boxes (made of 6 quads each)
+    // Tall box (rotated slightly — approximated with axis-aligned for now)
+    auto addBox = [&](Point3 pmin, Point3 pmax, std::shared_ptr<Material> mat) {
+        Vec3 dx(pmax.x - pmin.x, 0, 0);
+        Vec3 dy(0, pmax.y - pmin.y, 0);
+        Vec3 dz(0, 0, pmax.z - pmin.z);
+        world.add(std::make_shared<Quad>(pmin,              dx, dy, mat)); // front
+        world.add(std::make_shared<Quad>(pmin + dz,         dx, dy, mat)); // back
+        world.add(std::make_shared<Quad>(pmin,              dz, dy, mat)); // left
+        world.add(std::make_shared<Quad>(pmin + dx,         dz, dy, mat)); // right
+        world.add(std::make_shared<Quad>(pmin,              dx, dz, mat)); // bottom
+        world.add(std::make_shared<Quad>(pmin + dy,         dx, dz, mat)); // top
+    };
+
+    addBox(Point3(130, 0, 65),  Point3(295, 165, 230), white); // short box
+    addBox(Point3(265, 0, 295), Point3(430, 330, 460), white); // tall box
 
     // ── Camera ───────────────────────────────────────────────────────────────
-    Point3 lookFrom(10, 8, 15);
-    Point3 lookAt  ( 0, 2,  0);
-    double focusDist = (lookFrom - lookAt).length();
-    double aperture  = 0.3;
+    // Looking straight into the room from the front opening
+    Point3 lookFrom(278, 278, -800);
+    Point3 lookAt  (278, 278,    0);
+    double focusDist = 10.0;
+    double aperture  = 0.0;  // no DOF — sharp throughout
 
     Camera camera(
         lookFrom, lookAt,
         {0, 1, 0},
-        30.0,
+        40.0,
         aspectRatio,
         aperture,
         focusDist

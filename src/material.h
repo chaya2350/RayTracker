@@ -15,6 +15,9 @@ public:
     // attenuation = how much each color channel is multiplied (the "tint")
     virtual bool scatter(const Ray& ray, const HitRecord& rec,
                          Color& attenuation, Ray& scattered) const = 0;
+
+    // Light emitted by this material (black by default — most materials don't glow).
+    virtual Color emitted() const { return {0, 0, 0}; }
 };
 
 // ── Lambertian — matte / diffuse ──────────────────────────────────────────────
@@ -103,4 +106,22 @@ private:
         r0 *= r0;
         return r0 + (1.0 - r0) * std::pow(1.0 - cosine, 5);
     }
+};
+
+// ── DiffuseLight — glowing / emissive surface ─────────────────────────────────
+// This material doesn't scatter rays — it only emits light.
+// Think: a lamp, the sun, a neon sign.
+class DiffuseLight : public Material {
+public:
+    Color emit;   // color and intensity of the light (values > 1 = bright)
+
+    explicit DiffuseLight(const Color& c) : emit(c) {}
+
+    // Doesn't scatter — light rays hitting a lamp just stop here.
+    bool scatter(const Ray&, const HitRecord&, Color&, Ray&) const override {
+        return false;
+    }
+
+    // But it does emit — this is what illuminates everything else.
+    Color emitted() const override { return emit; }
 };
