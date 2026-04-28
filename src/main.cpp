@@ -10,6 +10,7 @@
 #include "obj_loader.h"
 #include "quad.h"
 #include "transform.h"
+#include "constant_medium.h"
 #include "bmp_writer.h"
 
 #include <iostream>
@@ -170,17 +171,17 @@ int main() {
         return box;
     };
 
-    // Short box: 165 tall, rotated -18° around Y
+    // Short box → white fog
     auto shortBox = addBox(Point3(0,0,0), Point3(165,165,165), white);
     shortBox = std::make_shared<RotateY>(shortBox, -18.0);
     shortBox = std::make_shared<Translate>(shortBox, Vec3(130, 0, 65));
-    world.add(shortBox);
+    world.add(std::make_shared<ConstantMedium>(shortBox, 0.01, Color(1,1,1)));
 
-    // Tall box: 330 tall, rotated +15° around Y
+    // Tall box → black smoke
     auto tallBox = addBox(Point3(0,0,0), Point3(165,330,165), white);
-    tallBox = std::make_shared<RotateY>(tallBox, 18.0);
+    tallBox = std::make_shared<RotateY>(tallBox, 15.0);
     tallBox = std::make_shared<Translate>(tallBox, Vec3(265, 0, 295));
-    world.add(tallBox);
+    world.add(std::make_shared<ConstantMedium>(tallBox, 0.01, Color(0,0,0)));
 
     // Glass sphere — sits on top of the short box, bends light from both walls
     world.add(std::make_shared<Sphere>(

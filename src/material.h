@@ -125,3 +125,23 @@ public:
     // But it does emit — this is what illuminates everything else.
     Color emitted() const override { return emit; }
 };
+
+// ── Isotropic — scatters in a perfectly random direction ──────────────────────
+// Used inside volumes (fog, smoke, clouds).
+// Unlike Lambertian (which prefers the normal direction),
+// Isotropic treats every direction equally — like a tiny droplet of fog.
+class Isotropic : public Material {
+public:
+    Color albedo;   // color/tint of the medium (white fog, black smoke, etc.)
+
+    explicit Isotropic(const Color& c) : albedo(c) {}
+
+    bool scatter(const Ray& /*ray*/, const HitRecord& rec,
+                 Color& attenuation, Ray& scattered) const override
+    {
+        // Pick a completely random direction in the unit sphere — no bias
+        scattered   = Ray(rec.point, randomUnitVector());
+        attenuation = albedo;
+        return true;
+    }
+};
