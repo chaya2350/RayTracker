@@ -9,6 +9,7 @@
 #include "triangle.h"
 #include "obj_loader.h"
 #include "quad.h"
+#include "transform.h"
 #include "bmp_writer.h"
 
 #include <iostream>
@@ -151,22 +152,35 @@ int main() {
     // Area light — a glowing rectangle cut into the ceiling
     world.add(std::make_shared<Quad>(Point3(213,554,227), Vec3(130,0,0), Vec3(0,0,105), lightMat));
 
-    // Two boxes (made of 6 quads each)
-    // Tall box (rotated slightly — approximated with axis-aligned for now)
-    auto addBox = [&](Point3 pmin, Point3 pmax, std::shared_ptr<Material> mat) {
+    // Two boxes — build axis-aligned, then rotate + translate into place.
+    // These exact angles and positions match the original Cornell Box paper.
+    auto addBox = [&](Point3 pmin, Point3 pmax, std::shared_ptr<Material> mat)
+        -> std::shared_ptr<Hittable>
+    {
+        auto box = std::make_shared<HittableList>();
         Vec3 dx(pmax.x - pmin.x, 0, 0);
         Vec3 dy(0, pmax.y - pmin.y, 0);
         Vec3 dz(0, 0, pmax.z - pmin.z);
-        world.add(std::make_shared<Quad>(pmin,              dx, dy, mat)); // front
-        world.add(std::make_shared<Quad>(pmin + dz,         dx, dy, mat)); // back
-        world.add(std::make_shared<Quad>(pmin,              dz, dy, mat)); // left
-        world.add(std::make_shared<Quad>(pmin + dx,         dz, dy, mat)); // right
-        world.add(std::make_shared<Quad>(pmin,              dx, dz, mat)); // bottom
-        world.add(std::make_shared<Quad>(pmin + dy,         dx, dz, mat)); // top
+        box->add(std::make_shared<Quad>(pmin,        dx, dy, mat)); // front
+        box->add(std::make_shared<Quad>(pmin + dz,   dx, dy, mat)); // back
+        box->add(std::make_shared<Quad>(pmin,        dz, dy, mat)); // left
+        box->add(std::make_shared<Quad>(pmin + dx,   dz, dy, mat)); // right
+        box->add(std::make_shared<Quad>(pmin,        dx, dz, mat)); // bottom
+        box->add(std::make_shared<Quad>(pmin + dy,   dx, dz, mat)); // top
+        return box;
     };
 
-    addBox(Point3(130, 0, 65),  Point3(295, 165, 230), white); // short box
-    addBox(Point3(265, 0, 295), Point3(430, 330, 460), white); // tall box
+    // Short box: 165 tall, rotated -18° around Y
+    auto shortBox = addBox(Point3(0,0,0), Point3(165,165,165), white);
+    shortBox = std::make_shared<RotateY>(shortBox, -18.0);
+    shortBox = std::make_shared<Translate>(shortBox, Vec3(130, 0, 65));
+    world.add(shortBox);
+
+    // Tall box: 330 tall, rotated +15° around Y
+    auto tallBox = addBox(Point3(0,0,0), Point3(165,330,165), white);
+    tallBox = std::make_shared<RotateY>(tallBox, 15.0);
+    tallBox = std::make_shared<Translate>(tallBox, Vec3(265, 0, 295));
+    world.add(tallBox);
 
     // ── Camera ───────────────────────────────────────────────────────────────
     // Looking straight into the room from the front opening
