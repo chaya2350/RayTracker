@@ -178,9 +178,14 @@ int main() {
 
     // Tall box: 330 tall, rotated +15° around Y
     auto tallBox = addBox(Point3(0,0,0), Point3(165,330,165), white);
-    tallBox = std::make_shared<RotateY>(tallBox, 15.0);
+    tallBox = std::make_shared<RotateY>(tallBox, 18.0);
     tallBox = std::make_shared<Translate>(tallBox, Vec3(265, 0, 295));
     world.add(tallBox);
+
+    // Glass sphere — sits on top of the short box, bends light from both walls
+    world.add(std::make_shared<Sphere>(
+        Point3(190, 165 + 90, 145), 90,
+        std::make_shared<Dielectric>(1.5)));
 
     // ── Camera ───────────────────────────────────────────────────────────────
     // Looking straight into the room from the front opening
