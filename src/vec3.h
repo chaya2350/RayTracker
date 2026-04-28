@@ -47,6 +47,14 @@ inline Vec3 cross(const Vec3& a, const Vec3& b) {
 inline Vec3 normalize(const Vec3& v) { return v / v.length(); }
 inline Vec3 reflect(const Vec3& v, const Vec3& n) { return v - 2*dot(v,n)*n; }
 
+// Snell's law: bend a ray as it passes through a medium (e.g. glass)
+inline Vec3 refract(const Vec3& uv, const Vec3& n, double etaiOverEtat) {
+    double cosTheta     = std::min(dot(-uv, n), 1.0);
+    Vec3   rOutPerp     = etaiOverEtat * (uv + cosTheta * n);
+    Vec3   rOutParallel = -std::sqrt(std::abs(1.0 - rOutPerp.lengthSquared())) * n;
+    return rOutPerp + rOutParallel;
+}
+
 // Type aliases
 using Point3 = Vec3;
 using Color  = Vec3;

@@ -1,13 +1,17 @@
 #pragma once
 #include "hittable.h"
+#include <memory>
+
+class Material;
 
 class Sphere : public Hittable {
 public:
     Point3 center;
     double radius;
+    std::shared_ptr<Material> material;
 
-    Sphere(const Point3& center, double radius)
-        : center(center), radius(std::abs(radius)) {}
+    Sphere(const Point3& center, double radius, std::shared_ptr<Material> material)
+        : center(center), radius(std::abs(radius)), material(std::move(material)) {}
 
     bool hit(const Ray& ray, double tMin, double tMax, HitRecord& rec) const override {
         Vec3 oc = ray.origin - center;
@@ -29,8 +33,9 @@ public:
             if (root <= tMin || root >= tMax) return false;
         }
 
-        rec.t     = root;
-        rec.point = ray.at(root);
+        rec.t        = root;
+        rec.point    = ray.at(root);
+        rec.material = material;
         rec.setFaceNormal(ray, (rec.point - center) / radius);
         return true;
     }

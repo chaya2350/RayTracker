@@ -1,52 +1,33 @@
 #include "vec3.h"
 #include "ray.h"
+#include "utils.h"
 #include "camera.h"
 #include "hittable_list.h"
 #include "sphere.h"
+#include "material.h"
 #include "bmp_writer.h"
 
 #include <iostream>
 #include <vector>
-#include <random>
-#include <limits>
-
-// ── Random helpers ────────────────────────────────────────────────────────────
-static std::mt19937 rng(42);
-static std::uniform_real_distribution<double> dist01(0.0, 1.0);
-
-double randomDouble()              { return dist01(rng); }
-double randomDouble(double lo, double hi) { return lo + (hi - lo) * randomDouble(); }
-
-Vec3 randomInUnitSphere() {
-    while (true) {
-        Vec3 p = {randomDouble(-1,1), randomDouble(-1,1), randomDouble(-1,1)};
-        if (p.lengthSquared() < 1.0) return p;
-    }
-}
-
-Vec3 randomUnitVector() { return normalize(randomInUnitSphere()); }
 
 // ── Ray color (recursive path tracing) ───────────────────────────────────────
 Color rayColor(const Ray& ray, const Hittable& world, int depth) {
     if (depth <= 0)
-        return {0, 0, 0};   // absorbed — no more light
+        return {0, 0, 0};
 
     HitRecord rec;
-    constexpr double tMin = 1e-4;   // shadow-acne fix
-    constexpr double tMax = std::numeric_limits<double>::infinity();
-
-    if (world.hit(ray, tMin, tMax, rec)) {
-        // Lambertian (matte) diffuse: scatter in random hemisphere around normal
-        Vec3 target = rec.point + rec.normal + randomUnitVector();
-        Ray  scattered(rec.point, target - rec.point);
-        return 0.5 * rayColor(scattered, world, depth - 1);
+    if (world.hit(ray, 1e-4, infinity, rec)) {
+        Ray   scattered;
+        Color attenuation;
+        if (rec.material->scatter(ray, rec, attenuation, scattered))
+            return attenuation * rayColor(scattered, world, depth - 1);
+        return {0, 0, 0};
     }
 
     // Background: sky gradient — blue at top, white at bottom
     Vec3   unit = normalize(ray.direction);
     double t    = 0.5 * (unit.y + 1.0);
     return (1.0 - t) * Color(1.0, 1.0, 1.0) + t * Color(0.5, 0.7, 1.0);
-   // return (1.0 - t) * Color(1.0, 1.0, 1.0) + t * Color(0.1, 0.0, 0.0);
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -55,22 +36,28 @@ int main() {
     constexpr double aspectRatio   = 16.0 / 9.0;
     constexpr int    imageWidth    = 800;
     constexpr int    imageHeight   = static_cast<int>(imageWidth / aspectRatio);
-    constexpr int    samplesPerPx  = 100;   // anti-aliasing samples
-    constexpr int    maxDepth      = 50;    // max ray bounces
+    constexpr int    samplesPerPx  = 100;
+    constexpr int    maxDepth      = 50;
+
+    // Materials
+    auto matGround  = std::make_shared<Lambertian>(Color(0.8, 0.8, 0.0));  // yellow-green
+    auto matCenter  = std::make_shared<Dielectric>(1.5);                    // glass
+    auto matLeft    = std::make_shared<Metal>(Color(0.8, 0.8, 0.8), 0.0);  // chrome
+    auto matRight   = std::make_shared<Metal>(Color(0.8, 0.6, 0.2), 0.4);  // brushed gold
 
     // World
     HittableList world;
-    world.add(std::make_shared<Sphere>(Point3( 0.0,    0.0, -1.0),  0.5));   // center sphere
-    world.add(std::make_shared<Sphere>(Point3(-1.0,    0.0, -1.0),  0.5));   // left sphere
-    world.add(std::make_shared<Sphere>(Point3( 1.0,    0.0, -1.0),  0.5));   // right sphere
-    world.add(std::make_shared<Sphere>(Point3( 0.0, -100.5, -1.0), 100.0));  // ground
+    world.add(std::make_shared<Sphere>(Point3( 0.0,    0.0, -1.0),   0.5,   matCenter));
+    world.add(std::make_shared<Sphere>(Point3(-1.0,    0.0, -1.0),   0.5,   matLeft));
+    world.add(std::make_shared<Sphere>(Point3( 1.0,    0.0, -1.0),   0.5,   matRight));
+    world.add(std::make_shared<Sphere>(Point3( 0.0, -100.5, -1.0), 100.0,   matGround));
 
     // Camera
     Camera camera(
-        {0, 0,  0},   // look from
-        {0, 0, -1},   // look at
-        {0, 1,  0},   // up
-        70.0,         // vfov
+        {0, 0,  0},
+        {0, 0, -1},
+        {0, 1,  0},
+        70.0,
         aspectRatio
     );
 

@@ -2,10 +2,13 @@
 #include "ray.h"
 #include <memory>
 
+class Material; // forward declaration — material.h includes us
+
 // Holds all info about a ray-object intersection
 struct HitRecord {
     Point3 point;
     Vec3   normal;
+    std::shared_ptr<Material> material;
     double t = 0.0;
     bool   frontFace = true;
 
