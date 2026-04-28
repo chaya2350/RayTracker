@@ -63,8 +63,8 @@ inline void saveBMP(const std::string& filename,
 
     std::vector<uint8_t> row(rowSize, 0);
 
-    // BMP stores rows bottom-to-top, pixels in BGR order
-    for (int j = 0; j < height; ++j) {
+    // BMP stores rows bottom-to-top — iterate in reverse so row 0 (sky) ends up at top
+    for (int j = height - 1; j >= 0; --j) {
         for (int i = 0; i < width; ++i) {
             const Color& c = pixels[j * width + i];
             row[i * 3 + 0] = toUint8(c.z, samplesPerPixel);  // B
