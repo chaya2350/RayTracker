@@ -56,7 +56,7 @@ public:
 
         // Compute the rotated bounding box by rotating all 8 corners
         AABB bbox;
-        object->boundingBox(bbox);
+        this->object->boundingBox(bbox);  // use this->object — the parameter was moved!
 
         Point3 mn( infinity,  infinity,  infinity);
         Point3 mx(-infinity, -infinity, -infinity);

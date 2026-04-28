@@ -7,9 +7,10 @@
 constexpr double infinity = std::numeric_limits<double>::infinity();
 
 // ── Random helpers ────────────────────────────────────────────────────────────
+// thread_local: each thread gets its own RNG — no data race, no mutex needed.
 inline double randomDouble() {
-    static std::mt19937 rng(42);
-    static std::uniform_real_distribution<double> dist(0.0, 1.0);
+    thread_local std::mt19937 rng(std::random_device{}());
+    thread_local std::uniform_real_distribution<double> dist(0.0, 1.0);
     return dist(rng);
 }
 
