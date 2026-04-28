@@ -72,21 +72,69 @@ int main() {
     constexpr int    samplesPerPx = 100;
     constexpr int    maxDepth     = 50;
 
-    // Materials
-    auto matGround = std::make_shared<Lambertian>(Color(0.8, 0.8, 0.0));
-    auto matCenter = std::make_shared<Dielectric>(1.5);
-    auto matLeft   = std::make_shared<Metal>(Color(0.8, 0.8, 0.8), 0.0);
-    auto matRight  = std::make_shared<Metal>(Color(0.8, 0.6, 0.2), 0.4);
-
-    // World
+    // ── Big random scene ──────────────────────────────────────────────────────
     HittableList world;
-    world.add(std::make_shared<Sphere>(Point3( 0.0,    0.0, -1.0),   0.5, matCenter));
-    world.add(std::make_shared<Sphere>(Point3(-1.0,    0.0, -1.0),   0.5, matLeft));
-    world.add(std::make_shared<Sphere>(Point3( 1.0,    0.0, -1.0),   0.5, matRight));
-    world.add(std::make_shared<Sphere>(Point3( 0.0, -100.5, -1.0), 100.0, matGround));
 
-    // Camera
-    Camera camera({0,0,0}, {0,0,-1}, {0,1,0}, 70.0, aspectRatio);
+    // Ground
+    world.add(std::make_shared<Sphere>(
+        Point3(0, -1000, 0), 1000,
+        std::make_shared<Lambertian>(Color(0.5, 0.5, 0.5))));
+
+    // Dozens of small random spheres
+    for (int a = -11; a < 11; ++a) {
+        for (int b = -11; b < 11; ++b) {
+            double chooseMat = randomDouble();
+            Point3 center(a + 0.9*randomDouble(), 0.2, b + 0.9*randomDouble());
+
+            // Skip spheres too close to the big three
+            if ((center - Point3(4, 0.2, 0)).length() < 0.9) continue;
+
+            std::shared_ptr<Material> mat;
+
+            if (chooseMat < 0.75) {
+                // 75% — matte with random color
+                Color albedo = Color(randomDouble()*randomDouble(),
+                                     randomDouble()*randomDouble(),
+                                     randomDouble()*randomDouble());
+                mat = std::make_shared<Lambertian>(albedo);
+            } else if (chooseMat < 0.92) {
+                // 17% — metal with random color and fuzz
+                Color  albedo = Color(randomDouble(0.5,1), randomDouble(0.5,1), randomDouble(0.5,1));
+                double fuzz   = randomDouble(0, 0.4);
+                mat = std::make_shared<Metal>(albedo, fuzz);
+            } else {
+                // 8% — glass
+                mat = std::make_shared<Dielectric>(1.5);
+            }
+
+            world.add(std::make_shared<Sphere>(center, 0.2, mat));
+        }
+    }
+
+    // Three hero spheres in the center
+    world.add(std::make_shared<Sphere>(Point3( 0, 1, 0), 1.0,
+        std::make_shared<Dielectric>(1.5)));                                       // glass
+
+    world.add(std::make_shared<Sphere>(Point3(-4, 1, 0), 1.0,
+        std::make_shared<Lambertian>(Color(0.4, 0.2, 0.1))));                     // brown matte
+
+    world.add(std::make_shared<Sphere>(Point3( 4, 1, 0), 1.0,
+        std::make_shared<Metal>(Color(0.7, 0.6, 0.5), 0.0)));                     // chrome
+
+    // ── Camera with Depth of Field ────────────────────────────────────────────
+    Point3 lookFrom(13, 2, 3);
+    Point3 lookAt  ( 0, 0, 0);
+    double focusDist = 10.0;
+    double aperture  = 0.1;
+
+    Camera camera(
+        lookFrom, lookAt,
+        {0, 1, 0},
+        20.0,
+        aspectRatio,
+        aperture,
+        focusDist
+    );
 
     // Thread setup
     const int numThreads = std::thread::hardware_concurrency();
