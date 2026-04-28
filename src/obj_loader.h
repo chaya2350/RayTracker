@@ -23,6 +23,7 @@ inline std::shared_ptr<Hittable> loadOBJ(const std::string& filename,
     }
 
     std::vector<Point3>  vertices;
+    std::vector<Vec3>    normals;     // vertex normals from "vn" lines
     HittableList         triangles;
 
     std::string line;
@@ -37,27 +38,57 @@ inline std::shared_ptr<Hittable> loadOBJ(const std::string& filename,
             ss >> x >> y >> z;
             vertices.emplace_back(x, y, z);
 
+        } else if (token == "vn") {
+            // Vertex normal
+            double x, y, z;
+            ss >> x >> y >> z;
+            normals.emplace_back(x, y, z);
+
         } else if (token == "f") {
             // Face — parse indices (OBJ is 1-based)
-            // Supports: "f 1 2 3", "f 1/2/3 4/5/6 7/8/9", "f 1//3 2//4 3//5"
-            std::vector<int> indices;
+            // Format can be: "f v", "f v/vt", "f v/vt/vn", "f v//vn"
+            struct FaceVert { int vi = 0, ni = -1; }; // vertex index, normal index
+            std::vector<FaceVert> fverts;
+
             std::string part;
             while (ss >> part) {
-                // Take only the first number before '/'
-                int idx = std::stoi(part.substr(0, part.find('/')));
-                if (idx < 0)
-                    idx = static_cast<int>(vertices.size()) + idx + 1; // negative = relative
-                indices.push_back(idx - 1); // convert to 0-based
+                FaceVert fv;
+                // Split by '/'
+                std::istringstream ps(part);
+                std::string tok;
+                int slot = 0;
+                while (std::getline(ps, tok, '/')) {
+                    if (!tok.empty()) {
+                        int idx = std::stoi(tok);
+                        if (slot == 0) fv.vi = (idx < 0) ? (int)vertices.size() + idx : idx - 1;
+                        if (slot == 2) fv.ni = (idx < 0) ? (int)normals.size()   + idx : idx - 1;
+                    }
+                    ++slot;
+                }
+                fverts.push_back(fv);
             }
 
-            // Triangulate (fan from first vertex — works for convex faces)
-            for (size_t i = 1; i + 1 < indices.size(); ++i) {
-                triangles.add(std::make_shared<Triangle>(
-                    vertices[indices[0]],
-                    vertices[indices[i]],
-                    vertices[indices[i + 1]],
-                    material
-                ));
+            // Triangulate (fan from first vertex)
+            bool hasNormals = !normals.empty() && fverts[0].ni >= 0;
+            for (size_t i = 1; i + 1 < fverts.size(); ++i) {
+                if (hasNormals) {
+                    triangles.add(std::make_shared<Triangle>(
+                        vertices[fverts[0].vi],
+                        vertices[fverts[i].vi],
+                        vertices[fverts[i+1].vi],
+                        normals[fverts[0].ni],
+                        normals[fverts[i].ni],
+                        normals[fverts[i+1].ni],
+                        material
+                    ));
+                } else {
+                    triangles.add(std::make_shared<Triangle>(
+                        vertices[fverts[0].vi],
+                        vertices[fverts[i].vi],
+                        vertices[fverts[i+1].vi],
+                        material
+                    ));
+                }
             }
         }
     }

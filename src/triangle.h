@@ -3,16 +3,31 @@
 #include "material.h"
 
 // A single triangle defined by three vertices.
-// Uses the Möller–Trumbore algorithm for ray intersection —
-// one of the most elegant pieces of math in computer graphics.
+// Supports flat shading (auto-computed face normal) and
+// smooth (Phong) shading via per-vertex normals from the OBJ file.
+// Uses the Möller–Trumbore algorithm for ray intersection.
 class Triangle : public Hittable {
 public:
     Point3 v0, v1, v2;
+    Vec3   n0, n1, n2;   // per-vertex normals (used for smooth shading)
     std::shared_ptr<Material> material;
 
+    // Constructor WITH per-vertex normals — smooth shading
+    Triangle(const Point3& v0, const Point3& v1, const Point3& v2,
+             const Vec3& n0, const Vec3& n1, const Vec3& n2,
+             std::shared_ptr<Material> material)
+        : v0(v0), v1(v1), v2(v2)
+        , n0(n0), n1(n1), n2(n2)
+        , material(std::move(material)) {}
+
+    // Constructor WITHOUT normals — flat shading (same normal for whole triangle)
     Triangle(const Point3& v0, const Point3& v1, const Point3& v2,
              std::shared_ptr<Material> material)
-        : v0(v0), v1(v1), v2(v2), material(std::move(material)) {}
+        : v0(v0), v1(v1), v2(v2), material(std::move(material))
+    {
+        Vec3 flatNormal = normalize(cross(v1 - v0, v2 - v0));
+        n0 = n1 = n2 = flatNormal;
+    }
 
     bool hit(const Ray& ray, double tMin, double tMax, HitRecord& rec) const override {
         // Edge vectors from v0
@@ -44,13 +59,16 @@ public:
         if (t < tMin || t > tMax) return false;
 
         // Hit! Fill in the record
-        rec.t     = t;
-        rec.point = ray.at(t);
+        rec.t        = t;
+        rec.point    = ray.at(t);
         rec.material = material;
 
-        // Face normal = cross product of edges (right-hand rule)
-        Vec3 outwardNormal = normalize(cross(edge1, edge2));
-        rec.setFaceNormal(ray, outwardNormal);
+        // Smooth (Phong) shading:
+        // Blend the three vertex normals using barycentric weights.
+        // u and v tell us "how close to v1 / v2" the hit point is.
+        // The weight of v0 is therefore (1 - u - v).
+        Vec3 smoothNormal = normalize((1.0 - u - v) * n0 + u * n1 + v * n2);
+        rec.setFaceNormal(ray, smoothNormal);
 
         return true;
     }
